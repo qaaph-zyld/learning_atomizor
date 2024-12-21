@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: learning-atomizer-client
+  namespace: learning-atomizer
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: learning-atomizer-client
+  template:
+    metadata:
+      labels:
+        app: learning-atomizer-client
+    spec:
+      containers:
+      - name: client
+        image: [ECR_URL]/learning-atomizer-client:latest
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            cpu: "0.5"
+            memory: "1Gi"
+          limits:
+            cpu: "1"
+            memory: "2Gi"
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: client-config
+              key: api_url
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      imagePullSecrets:
+      - name: ecr-secret

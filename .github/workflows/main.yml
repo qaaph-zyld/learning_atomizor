@@ -1,0 +1,191 @@
+name: Learning Atomizer CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY_SERVER: learning-atomizer-server
+  ECR_REPOSITORY_CLIENT: learning-atomizer-client
+  EKS_CLUSTER: learning-atomizer-cluster
+  KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    
+    services:
+      mongodb:
+        image: mongo:5.0
+        ports:
+          - 27017:27017
+      redis:
+        image: redis:6.2
+        ports:
+          - 6379:6379
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v2
+      with:
+        node-version: '16.x'
+        cache: 'npm'
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.9'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        npm ci
+        cd src/server/services
+        pip install -r requirements.txt
+
+    - name: Run linting
+      run: |
+        npm run lint
+        cd src/server/services
+        pylint *.py
+
+    - name: Run tests
+      run: |
+        npm test
+        cd src/server/services
+        python -m pytest
+
+    - name: Run security scan
+      uses: snyk/actions/node@master
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  build:
+    name: Build and Push
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: Build and push server image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_SERVER:${{ github.sha }} -t $ECR_REGISTRY/$ECR_REPOSITORY_SERVER:latest ./src/server
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_SERVER:${{ github.sha }}
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_SERVER:latest
+
+    - name: Build and push client image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_CLIENT:${{ github.sha }} -t $ECR_REGISTRY/$ECR_REPOSITORY_CLIENT:latest ./src/client
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_CLIENT:${{ github.sha }}
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_CLIENT:latest
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: Update kube config
+      run: |
+        echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 -d > kubeconfig.yaml
+        export KUBECONFIG=kubeconfig.yaml
+
+    - name: Deploy to EKS
+      run: |
+        # Update image tags in deployment files
+        sed -i "s|image: .*learning-atomizer-server.*|image: ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY_SERVER:${{ github.sha }}|" k8s/server/deployment.yaml
+        sed -i "s|image: .*learning-atomizer-client.*|image: ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY_CLIENT:${{ github.sha }}|" k8s/client/deployment.yaml
+        
+        # Apply Kubernetes configurations
+        kubectl apply -f k8s/server/
+        kubectl apply -f k8s/client/
+        kubectl apply -f k8s/services/
+        kubectl apply -f k8s/ingress/
+        
+        # Wait for deployments to complete
+        kubectl rollout status deployment/learning-atomizer-server -n learning-atomizer
+        kubectl rollout status deployment/learning-atomizer-client -n learning-atomizer
+
+    - name: Verify Deployment
+      run: |
+        kubectl get pods -n learning-atomizer
+        kubectl get services -n learning-atomizer
+        kubectl get ingress -n learning-atomizer
+
+  notify:
+    name: Notify
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+    - name: Notify Slack
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        fields: repo,message,commit,author,action,eventName,ref,workflow,job,took
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      if: always()
+
+    - name: Send deployment status
+      if: always()
+      uses: actions/github-script@v4
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const { owner, repo } = context.repo;
+          const deployment = await github.repos.createDeployment({
+            owner,
+            repo,
+            ref: context.sha,
+            environment: 'production',
+            auto_merge: false
+          });
+          
+          await github.repos.createDeploymentStatus({
+            owner,
+            repo,
+            deployment_id: deployment.data.id,
+            state: '${{ job.status }}',
+            environment_url: 'https://learning-atomizer.com',
+            log_url: `https://github.com/${owner}/${repo}/actions/runs/${context.runId}`,
+            description: 'Deployment ${{ job.status }}'
+          });

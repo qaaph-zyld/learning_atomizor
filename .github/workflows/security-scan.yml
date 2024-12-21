@@ -1,0 +1,98 @@
+name: Security Scan
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Run daily at midnight
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Run Snyk to check for vulnerabilities
+      uses: snyk/actions/node@master
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        args: --severity-threshold=high
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        ignore-unfixed: true
+        format: 'template'
+        template: '@/contrib/sarif.tpl'
+        output: 'trivy-results.sarif'
+        severity: 'CRITICAL,HIGH'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v1
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+    - name: Run OWASP ZAP scan
+      uses: zaproxy/action-full-scan@v0.3.0
+      with:
+        target: 'https://learning-atomizer.com'
+        rules_file_name: '.zap/rules.tsv'
+        cmd_options: '-a'
+
+    - name: Run dependency audit
+      run: |
+        npm audit
+        cd src/server/services
+        pip-audit
+
+    - name: Run secret scanning
+      uses: gitleaks/gitleaks-action@v1.6.0
+
+    - name: Run container security scan
+      run: |
+        docker build -t learning-atomizer-server:latest ./src/server
+        docker build -t learning-atomizer-client:latest ./src/client
+        trivy image learning-atomizer-server:latest
+        trivy image learning-atomizer-client:latest
+
+    - name: Generate security report
+      if: always()
+      run: |
+        echo "# Security Scan Report" > security-report.md
+        echo "## Scan Date: $(date)" >> security-report.md
+        echo "## Findings" >> security-report.md
+        echo "### Snyk Results" >> security-report.md
+        cat snyk-results.json >> security-report.md
+        echo "### Trivy Results" >> security-report.md
+        cat trivy-results.sarif >> security-report.md
+        echo "### OWASP ZAP Results" >> security-report.md
+        cat zap-scan-results.json >> security-report.md
+
+    - name: Create Issue
+      if: failure()
+      uses: actions/github-script@v4
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const fs = require('fs');
+          const report = fs.readFileSync('security-report.md', 'utf8');
+          
+          await github.issues.create({
+            ...context.repo,
+            title: '🚨 Security Scan Findings',
+            body: report,
+            labels: ['security', 'high-priority']
+          });
+
+    - name: Notify Security Team
+      if: failure()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        fields: repo,message,commit,author,action,eventName,ref,workflow,job,took
+        text: "🚨 Security vulnerabilities found! Check the security report."
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SECURITY_SLACK_WEBHOOK_URL }}

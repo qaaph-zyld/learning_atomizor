@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "c:\\Users\\ajelacn\\OneDrive - Adient\\Documents\\Projects\\Learning Atomizer\\src\\server\\logs\\.a8bb70b58fd6f96b562c145ee827ed4d8cc3f45a-audit.json",
+    "files": [
+        {
+            "date": 1734742478234,
+            "name": "c:\\Users\\ajelacn\\OneDrive - Adient\\Documents\\Projects\\Learning Atomizer\\src\\server\\logs\\error-2024-12-21.log",
+            "hash": "9224dee3f419a2b9245d447197938b0e7abd812c4603ba03604b4da7ef6ca437"
+        }
+    ],
+    "hashType": "sha256"
+}

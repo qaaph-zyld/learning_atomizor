@@ -69,6 +69,12 @@ cd src/client
 npm run serve
 ```
 
+## Project Status
+
+- **Stage**: Pre-Alpha (Micro-MVP in progress as of 2025-12-01)
+- **Current focus**: Minimal end-to-end flow (auth → atomize simple text → view atoms & basic progress)
+- **Next**: Evaluate whether to expand toward SaaS or reframe as learning/template project
+
 ## Development
 
 ### Testing

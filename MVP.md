@@ -250,3 +250,20 @@ With the zero-investment approach, Learning Atomizor has an **even higher probab
 - **Clear Validation**: Revenue before investment proves market demand
 
 **The hard truth**: It requires significant time investment (320 hours) but eliminates financial risk entirely. You can validate the market, build the product, and achieve profitability before spending any meaningful money.
+
+## Update 2025-12-01 - Micro-MVP Focus
+
+- **Decision**: Prioritize a minimal, end-to-end Micro-MVP before investing in the full roadmap.
+- **Scope**:
+  - Auth: basic email/password registration and login with JWT (already implemented in `auth` routes and `User` model).
+  - Content atomization: rule-based text segmentation in `NLPService.processContent`, focusing on plain text/pasted input.
+  - Storage: persist original content and atomized units via existing Mongo models (`Content`/`AtomizedContent`).
+  - UI: simple flow to log in, submit content, atomize, and view atoms with basic progress indicator.
+- **Out of scope for Micro-MVP**:
+  - Workspaces, invitations, audit logging, webhooks, advanced analytics, clustering, and Kubernetes-level scalability.
+  - Full ML/NLP microservices and advanced AI features (kept for later iterations).
+
+- **Review point after Micro-MVP**:
+  - **Option A (extended)**: grow toward a monetizable SaaS product.
+  - **Option B**: reframe the repository as a learning/template project.
+  - **Option C**: pause/archive the project with a clearly documented status.

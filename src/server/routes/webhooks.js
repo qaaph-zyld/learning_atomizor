@@ -5,8 +5,8 @@ const { auth, adminOnly } = require('../middleware/auth');
 const WebhookSubscription = require('../models/WebhookSubscription');
 const webhookService = require('../services/WebhookService');
 
-// Start webhook service
-webhookService.start();
+// NOTE: Webhook service auto-start disabled for Micro-MVP
+// webhookService.start();
 
 // List webhook subscriptions
 router.get('/subscriptions', auth, async (req, res) => {

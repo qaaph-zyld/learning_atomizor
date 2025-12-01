@@ -1,6 +1,6 @@
 const Queue = require('../models/Queue');
 const Content = require('../models/Content');
-const { processContent } = require('./nlp');
+const NLPService = require('./nlpService');
 const EventEmitter = require('events');
 
 class QueueProcessor extends EventEmitter {
@@ -85,16 +85,8 @@ class QueueProcessor extends EventEmitter {
           throw new Error('Content not found');
         }
 
-        // Process content
-        const result = await processContent(content.filePath, {
-          onProgress: (progress) => {
-            this.emit('progress', {
-              queueItemId: queueItem._id,
-              contentId: content._id,
-              progress
-            });
-          }
-        });
+        // Process content using NLPService
+        const result = await NLPService.processContent(content.originalContent || '');
 
         // Update content with processed data
         content.atomizedContent = result.atomizedContent;

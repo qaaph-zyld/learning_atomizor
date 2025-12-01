@@ -4,8 +4,9 @@ const Queue = require('../models/Queue');
 const queueProcessor = require('../services/QueueProcessor');
 const { auth, adminOnly } = require('../middleware/auth');
 
-// Start queue processor on server start
-queueProcessor.start();
+// NOTE: Queue processor auto-start disabled for Micro-MVP
+// Start manually via POST /api/queue/maintenance { action: 'startProcessor' }
+// queueProcessor.start();
 
 // Add items to queue
 router.post('/batch', auth, async (req, res) => {
